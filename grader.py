@@ -169,9 +169,7 @@ def run_grading_in_container(container, task_id: str, test_type: str, dataset_di
     try:
         # Determine task dir on host
         if dataset_dir:
-            task_dir = Path(dataset_dir) / "task" / task_id
-        else:
-            task_dir = Path(f"datasets/dev-arena-mern-sandbox/task/{task_id}")
+            task_dir = Path(dataset_dir) / "tasks" / task_id
         if task_dir.exists():
             # Load golden diff directly
             golden_diff_path = task_dir / "task_diff.txt"

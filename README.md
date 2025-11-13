@@ -1,6 +1,6 @@
 # IDE Arena
-                                                                 
-IDE Arena is a comprehensive framework for evaluating AI IDE agents on real-world software engineering tasks across diverse technology stacks. We define IDE agents as AI models operating in a chat-based IDE environment with access to the same tools available in agent-enabled IDEs like Cursor. While adoption of agent-enabled IDEs is rapidly growing, there is no existing benchmark to rigorously test how well models perform as IDE agents in practice. 
+
+IDE Arena is a comprehensive framework for evaluating AI IDE agents on real-world software engineering tasks across diverse technology stacks. We define IDE agents as AI models operating in a chat-based IDE environment with access to the same tools available in agent-enabled IDEs like Cursor. While adoption of agent-enabled IDEs is rapidly growing, there is no existing benchmark to rigorously test how well models perform as IDE agents in practice.
 
 
 ## Quick Start
@@ -43,4 +43,29 @@ Start the Next.js dashboard to view traces and results:
 
 ```bash
 npm run dev
+```
+
+## Dataset Structure
+
+Each dataset must contain the following required files and directories:
+
+```
+dataset/
+├── Dockerfile                         # Container definition for the task environment
+├── docker-compose.yaml                # Docker compose configuration (or compose.yaml, docker-compose.yml)
+├── run_tests.sh                       # Test execution script
+└── tasks/                             # Task definitions directory
+    ├── task-name-1/
+    │   ├── task_description.txt        # Task description and instructions
+    │   ├── task_diff.txt               # Golden solution diff (for oracle mode)
+    │   ├── task_tests.py               # Task-specific test file
+    │   ├── run-tests.sh                # Task-specific test runner script
+    │   └── docker-compose.yaml         # Task-specific container configuration
+    ├── task-name-2/
+    │   ├── task_description.txt
+    │   ├── task_diff.txt
+    │   ├── task_tests.py
+    │   ├── run-tests.sh
+    │   └── docker-compose.yaml
+    └── ...
 ```

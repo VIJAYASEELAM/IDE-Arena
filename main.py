@@ -27,17 +27,15 @@ from rich.console import Console
 from rich.syntax import Syntax
 from util import parse_task_description
 
-# Setup logging
 logging.basicConfig(level=logging.WARNING, format="%(message)s")
 logger = logging.getLogger(__name__)
 
-app = typer.Typer(help="Agent IDE Environment - Test coding agents against datasets")
+app = typer.Typer(help="IDE Arena")
 console = Console()
 
 
 def strip_ansi_codes(text: str) -> str:
     """Remove ANSI escape codes from text to make logs readable"""
-    # Pattern to match ANSI escape codes
     ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
     return ansi_escape.sub('', text)
 
@@ -55,7 +53,6 @@ class OutputCapture:
     def __enter__(self):
         self.log_file = open(self.log_file_path, "w", encoding="utf-8")
 
-        # Create a custom writer that writes to both original output and log file
         class TeeWriter:
             def __init__(self, original, log_file, captured):
                 self.original = original
@@ -64,11 +61,10 @@ class OutputCapture:
 
             def write(self, text):
                 self.original.write(text)
-                # Strip ANSI codes from text before writing to log file
                 clean_text = strip_ansi_codes(text)
                 self.log_file.write(clean_text)
                 self.captured.write(clean_text)
-                self.log_file.flush()  # Ensure immediate writing
+                self.log_file.flush()
 
             def flush(self):
                 self.original.flush()
@@ -183,7 +179,6 @@ def pretty_print_conversation(conversation_data: dict, verbose: bool):
 
     console.print("\n[bold blue]═══ AGENT EXECUTION DETAILS ═══[/bold blue]")
 
-    # Print basic execution info
     if conversation_data.get("success"):
         console.print("[green]Execution Status: Success[/green]")
         console.print(
@@ -193,7 +188,6 @@ def pretty_print_conversation(conversation_data: dict, verbose: bool):
             f"[cyan]Iterations: {conversation_data.get('iterations', 'Unknown')}[/cyan]"
         )
 
-        # Print final response if available
         if conversation_data.get("agent_response"):
             console.print("\n[bold]Final Agent Response:[/bold]")
             console.print(
@@ -204,17 +198,14 @@ def pretty_print_conversation(conversation_data: dict, verbose: bool):
         if conversation_data.get("error"):
             console.print(f"[red]Error: {conversation_data['error']}[/red]")
 
-    # Pretty print conversation history
     conversation_history = conversation_data.get("conversation_history", [])
     if conversation_history:
         console.print(
             f"\n[bold]Conversation History ({len(conversation_history)} steps):[/bold]"
         )
 
-        # Convert to pretty JSON
         json_str = json.dumps(conversation_history, indent=2, ensure_ascii=False)
 
-        # Use Rich syntax highlighting for JSON
         syntax = Syntax(
             json_str, "json", theme="monokai", line_numbers=True, word_wrap=True
         )
@@ -246,14 +237,11 @@ def bench(
 ):
     """Benchmark a model against a ide-arena dataset"""
 
-    # Setup timing and logging
     start_time = datetime.now()
 
-    # Create logs directory and generate log file name
     logs_dir = Path("logs")
     logs_dir.mkdir(exist_ok=True)
 
-    # Generate normalized log file name (model_task.log format)
     def normalize_model_name(model: str) -> str:
         """Normalize model name for filenames"""
         return model.replace('/', '_').replace('openai/', '').replace('anthropic/', '').replace('gemini/', '')
@@ -262,16 +250,14 @@ def bench(
         """Extract task name from task_id or dataset"""
         if task:
             return task
-        # Extract meaningful name from dataset
         dataset_parts = Path(dataset_name).name.split('-')
         if len(dataset_parts) > 1:
-            return '-'.join(dataset_parts[1:])  # Skip first part like "logwatch"
+            return '-'.join(dataset_parts[1:])
         return dataset_parts[0]
 
     normalized_model = normalize_model_name(model_name)
     normalized_task = normalize_task_name(task_id, dataset)
 
-    # Create normalized filename: model_task.log
     log_filename = f"{normalized_model}_{normalized_task}.log"
     log_file_path = logs_dir / log_filename
 
@@ -279,7 +265,6 @@ def bench(
     total_tests_passed = 0
     total_tests_run = 0
 
-    # Capture all output to log file
     with OutputCapture(str(log_file_path)):
         print(
             f"Starting benchmark run at {start_time.strftime('%Y-%m-%d %H:%M:%S')}"
@@ -309,7 +294,6 @@ def bench(
                         "error",
                     )
 
-            # Allow absolute/relative dataset path or datasets/<name>
             potential_path = Path(dataset)
             if potential_path.exists():
                 dataset_dir = potential_path
@@ -337,7 +321,7 @@ def bench(
                     compose_file = potential_path
                     break
             test_script = dataset_dir / "run_tests.sh"
-            task_dir = dataset_dir / "task" / (task_id if task_id else "")
+            task_dir = dataset_dir / "tasks" / (task_id if task_id else "")
 
             if (
                 not dockerfile.exists()
@@ -346,7 +330,7 @@ def bench(
                 or not task_dir.exists()
             ):
                 vprint(
-                    True,  # Always print this error
+                    True,
                     f"Dataset {dataset} is missing some required files. "
                     f"\n\tDockerfile Exists:\t{dockerfile.exists()}"
                     f"\n\tDocker Compose Exists:\t{compose_file and compose_file.exists()}"
@@ -368,7 +352,6 @@ def bench(
                     vctx.log(f"Running task {current_task_id}...")
                     try:
                         vctx.log("Building Docker image...")
-                        # Sanitize image tag when dataset is an absolute path
                         ds_label = Path(dataset).name
                         safe_label = re.sub(r"[^a-z0-9_.-]", "-", ds_label.lower())
                         image_tag = f"{safe_label}_test_image"
@@ -380,7 +363,6 @@ def bench(
                                 vctx.log(chunk["stream"].strip(), "debug")
 
                         vctx.log("Running Docker container...")
-                        # Pass environment variables for API keys
                         env_vars = {}
                         print(f"DEBUG: Checking for API keys in environment...")
 
@@ -400,8 +382,6 @@ def bench(
 
                         print(f"DEBUG: Passing {len(env_vars)} environment variables to container")
 
-                        # Override dataset image ENTRYPOINT (which would run tests and exit)
-                        # Run an idle shell so we can exec tools inside the container
                         container = client.containers.run(
                             image.id,
                             detach=True,
@@ -410,7 +390,6 @@ def bench(
                             environment=env_vars,
                         )
 
-                        # Confirm container is running
                         try:
                             container.reload()
                             if container.status != "running":
@@ -421,10 +400,8 @@ def bench(
                         except Exception as e:
                             print(f"DEBUG: Error ensuring container running: {e}")
 
-                        # Enhanced git initialization in container for reliable change tracking
                         print("CONTAINER: Setting up git for change tracking...")
 
-                        # Change to /app directory first
                         print("CONTAINER: Changing to /app directory...")
                         cd_result = run_command_in_container(
                             container=container,
@@ -436,7 +413,6 @@ def bench(
                         else:
                             print(f"CONTAINER: Failed to verify /app directory: {cd_result.get('error', 'Unknown error')}")
 
-                        # Configure git user
                         print("CONTAINER: Configuring git user...")
                         git_config_email = run_command_in_container(
                             container=container,
@@ -454,7 +430,6 @@ def bench(
                         if git_config_name.get("exit_code") != 0:
                             print(f"CONTAINER: Git name config failed: {git_config_name.get('error', 'Unknown error')}")
 
-                        # Configure git for better diff tracking
                         print("CONTAINER: Configuring git settings for reliable tracking...")
                         git_configs = [
                             ["git", "config", "--global", "core.autocrlf", "false"],
@@ -468,7 +443,6 @@ def bench(
                             if config_result.get("exit_code") != 0:
                                 print(f"CONTAINER: Git config {' '.join(config_cmd[2:])} failed: {config_result.get('error', 'Unknown error')}")
 
-                        # Check if git repository already exists, if not initialize it
                         print("CONTAINER: Checking if git repository exists...")
                         git_check_result = run_command_in_container(
                             container=container,
@@ -478,7 +452,6 @@ def bench(
 
                         if git_check_result.get("exit_code") == 0:
                             print("CONTAINER: Git repository already exists")
-                            # Repository exists, check if it's clean and has commits
                             git_log_result = run_command_in_container(
                                 container=container,
                                 command=["git", "-C", "/app", "log", "--oneline", "-1"],
@@ -500,7 +473,6 @@ def bench(
                             else:
                                 print(f"CONTAINER: Git init failed: {git_init_result.get('error', 'Unknown error')}")
 
-                        # Verify git is working
                         git_status_check = run_command_in_container(
                             container=container,
                             command=["git", "-C", "/app", "status"],
@@ -511,10 +483,8 @@ def bench(
                         else:
                             print(f"CONTAINER: Git status check failed: {git_status_check.get('error', 'Unknown error')}")
 
-                        # Create comprehensive .gitignore
                         print("CONTAINER: Creating .gitignore...")
-                        gitignore_content = """# Dependencies - CRITICAL: Exclude all dependency directories
-node_modules/
+                        gitignore_content = """node_modules/
 venv/
 env/
 .env
@@ -523,20 +493,17 @@ __pycache__/
 *.pyo
 .pytest_cache/
 
-# Build artifacts
 build/
 dist/
 *.egg-info/
 target/
 
-# Logs and temporary files
 *.log
 *.tmp
 .DS_Store
 .coverage
 .cache/
 
-# Package files - CRITICAL: Exclude lock files and package metadata that change frequently
 package-lock.json
 package.json
 yarn.lock
@@ -548,26 +515,21 @@ poetry.lock
 .npm/
 .yarn/
 
-# IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# OS files
 .DS_Store
 Thumbs.db
 
-# Runtime files
 *.pid
 *.seed
 
-# Coverage and test outputs
 coverage/
 .nyc_output/
 .coverage
 
-# Temporary directories
 tmp/
 temp/"""
 
@@ -579,7 +541,6 @@ temp/"""
                         if gitignore_result.get("exit_code") != 0:
                             print(f"CONTAINER: Failed to create .gitignore: {gitignore_result.get('error', 'Unknown error')}")
 
-                        # Check what files exist before adding
                         print("CONTAINER: Checking available files...")
                         ls_result = run_command_in_container(
                             container=container,
@@ -589,10 +550,8 @@ temp/"""
                         if ls_result.get("exit_code") == 0:
                             print(f"CONTAINER: Files in /app: {ls_result.get('output', '').strip()}")
 
-                        # Add only source files that are not ignored by .gitignore
                         print("CONTAINER: Adding source files to git (respecting .gitignore)...")
 
-                        # First, reset any existing index issues
                         git_reset_result = run_command_in_container(
                             container=container,
                             command=["git", "-C", "/app", "reset"],
@@ -601,7 +560,6 @@ temp/"""
                         if git_reset_result.get("exit_code") == 0:
                             print("CONTAINER: Git reset succeeded")
 
-                        # Add everything BUT respect .gitignore (no --force flag)
                         git_add_all_result = run_command_in_container(
                             container=container,
                             command=["git", "-C", "/app", "add", "-A"],
@@ -612,7 +570,6 @@ temp/"""
                         else:
                             print(f"CONTAINER: Git add -A failed: {git_add_all_result.get('error', 'Unknown error')}")
 
-                        # Check what files are being ignored
                         git_ignored_result = run_command_in_container(
                             container=container,
                             command=["git", "-C", "/app", "status", "--ignored", "--short"],
@@ -628,7 +585,6 @@ temp/"""
                             else:
                                 print("CONTAINER: No files are being ignored by .gitignore")
 
-                        # Check what was actually added
                         git_status_after_add = run_command_in_container(
                             container=container,
                             command=["git", "-C", "/app", "status", "--porcelain"],
@@ -643,7 +599,6 @@ temp/"""
                             else:
                                 print("CONTAINER: No files staged (clean working directory)")
 
-                        # Also verify with ls-files to see what git is tracking
                         git_ls_files_result = run_command_in_container(
                             container=container,
                             command=["git", "-C", "/app", "ls-files", "--stage"],
@@ -657,7 +612,6 @@ temp/"""
                             else:
                                 print("CONTAINER: Git is not tracking any files")
 
-                        # Create initial commit
                         print("CONTAINER: Creating initial commit...")
                         git_commit_result = run_command_in_container(
                             container=container,
@@ -669,7 +623,6 @@ temp/"""
                         else:
                             print(f"CONTAINER: Initial commit failed: {git_commit_result.get('error', 'Unknown error')}")
 
-                        # Verify the commit
                         git_log_result = run_command_in_container(
                             container=container,
                             command=["git", "-C", "/app", "log", "--oneline", "-1"],
@@ -680,14 +633,13 @@ temp/"""
 
                         print("CONTAINER: Git setup completed")
 
-                        # For harness runs, remove golden diffs from the container so the model cannot read them
                         if agent != "oracle":
                             run_command_in_container(
                                 container=container,
                                 command=[
                                     "sh",
                                     "-c",
-                                    "find task -type f -name 'task_diff.txt' -delete && echo 'DEBUG: Removed task_diff.txt from container for harness runs'"
+                                    "find tasks -type f -name 'task_diff.txt' -delete && echo 'DEBUG: Removed task_diff.txt from container for harness runs'"
                                 ],
                                 stream=False,
                             )
@@ -696,7 +648,7 @@ temp/"""
                             container=container,
                             command=[
                                 "cat",
-                                f"task/{current_task_id}/task_description.txt",
+                                f"tasks/{current_task_id}/task_description.txt",
                             ],
                         )
                         task_data = parse_task_description(result["output"])
@@ -708,7 +660,6 @@ temp/"""
                             vctx.log("Task description is not valid", "error")
                             raise typer.Exit(1)
 
-                        # Deploy agent
                         vctx.log("Deploying agent...")
                         print(f"DEBUG: About to deploy agent {agent} with model {model_name}")
                         print(f"DEBUG: Task data keys: {list(task_data.keys())}")
@@ -732,10 +683,8 @@ temp/"""
 
                         vctx.log(f"Agent deployment result: {agent_result}", "debug")
 
-                        # Pretty print conversation in verbose mode
                         pretty_print_conversation(agent_result, verbose)
 
-                        # Run grading with enhanced RL scoring
                         vctx.log("Running grading...")
                         grading_result = run_grading_in_container(
                             container=container,
@@ -749,12 +698,10 @@ temp/"""
                             "debug",
                         )
 
-                        # Always show the final result
                         success = grading_result.get("success", False)
                         if not success:
                             overall_success = False
 
-                        # Aggregate test results
                         task_tests_passed = grading_result.get("tests_passed", 0)
                         task_total_tests = grading_result.get("total_tests", 0)
                         total_tests_passed += task_tests_passed
@@ -767,7 +714,6 @@ temp/"""
                             else ""
                         )
 
-                        # Enhanced reporting with RL metrics
                         pass_rate = grading_result.get("pass_rate", 0)
                         meets_reqs = grading_result.get("meets_minimum_requirements", False)
 
@@ -777,7 +723,6 @@ temp/"""
                             f"({pass_rate:.1%}){failed_code_message}"
                         )
 
-                        # Print AI Lab Training Metrics - RAW COMPONENTS
                         if "lab_training_data" in grading_result and grading_result["lab_training_data"]:
                             lab_data = grading_result["lab_training_data"]
                             print(f"\t-- Lab Training Metrics --")
@@ -795,13 +740,11 @@ temp/"""
                         elif grading_result["total_tests"] < 6:
                             print(f"\tTest coverage below recommended 6+ tests")
 
-                        # Show validation warnings and errors
                         for warning in grading_result.get("validation_warnings", []):
                             print(f"\t {warning}")
                         for error in grading_result.get("validation_errors", []):
                             print(f"\t {error}")
 
-                        # Show individual test results
                         for test_name, test_status in grading_result[
                             "test_details"
                         ].items():
@@ -821,7 +764,6 @@ temp/"""
             print(f"Benchmark run failed: {e}")
             raise
         finally:
-            # Always log completion info and create CSV entry
             end_time = datetime.now()
             duration = end_time - start_time
 
@@ -836,7 +778,6 @@ temp/"""
             print(f"Total tests: {total_tests_passed}/{total_tests_run} passed")
             print(f"Full log saved to: {log_file_path}")
 
-            # Create CSV log entry
             log_entry = create_log_entry(
                 dataset=dataset,
                 agent=agent,

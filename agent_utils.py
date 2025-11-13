@@ -219,7 +219,7 @@ def deploy_agent_in_container(
     if agent_name == "oracle":  # not a real agent
         result = run_command_in_container(
             container=container,
-            command=["git", "apply", f"task/{task_id}/task_diff.txt"],
+            command=["git", "apply", f"tasks/{task_id}/task_diff.txt"],
         )
         return {"success": result["success"], "output": result["output"]}
     elif agent_name == "harness":

@@ -61,7 +61,6 @@ function TrajectoryDetails({ trajectory }: { trajectory: Trajectory }) {
 
   const filterHarnessMessages = (lines: string[]) => {
     return lines.filter(line => {
-      // Filter out lines that match the pattern: [emoji/character] HARNESS:
       const harnessPattern = /^.?\s*HARNESS:/;
       return !harnessPattern.test(line.trim());
     });

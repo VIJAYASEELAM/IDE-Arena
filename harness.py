@@ -62,7 +62,7 @@ class EnhancedTools:
             "type": "function",
             "function": {
                 "name": "read_file",
-                "description": "Read the contents of a file. the output of this tool call will be the 1-indexed file contents from start_line_one_indexed to end_line_one_indexed_inclusive, together with a summary of the lines outside start_line_one_indexed and end_line_one_indexed_inclusive.Note: you are NOT allowed to read files in the /task directory or the ./run_tests.sh file.",
+                "description": "Read the contents of a file. the output of this tool call will be the 1-indexed file contents from start_line_one_indexed to end_line_one_indexed_inclusive, together with a summary of the lines outside start_line_one_indexed and end_line_one_indexed_inclusive.Note: you are NOT allowed to read files in the /tasks directory or the ./run_tests.sh file.",
                 "parameters": {
                     "type": "object",
                     "properties": {

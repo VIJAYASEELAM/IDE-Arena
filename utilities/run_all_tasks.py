@@ -1,7 +1,4 @@
 #!/usr/bin/env python3
-"""
-Utility script to run all tasks in a specified dataset
-"""
 import os
 import subprocess
 import sys
@@ -9,8 +6,7 @@ from pathlib import Path
 
 
 def get_task_names(dataset_path: Path) -> list:
-    """Get all task directory names from the dataset"""
-    task_dir = dataset_path / "task"
+    task_dir = dataset_path / "tasks"
     if not task_dir.exists():
         print(f"Task directory not found: {task_dir}")
         return []
@@ -23,8 +19,7 @@ def get_task_names(dataset_path: Path) -> list:
     return sorted(tasks)
 
 
-def run_task(task_name: str, dataset: str, model: str = "gpt-4o") -> bool:
-    """Run a single task with the specified model"""
+def run_task(task_name: str, dataset: str, model: str = "gpt-5") -> bool:
     cmd = [
         "uv", "run", "main.py", "bench",
         "--dataset", dataset,
@@ -48,23 +43,18 @@ def run_task(task_name: str, dataset: str, model: str = "gpt-4o") -> bool:
 
 
 def main():
-    """Main function to run all tasks"""
-    # Parse command line arguments
     if len(sys.argv) < 2:
         print("Usage: python run_all_tasks.py <dataset> [model]")
-        print("Example: python run_all_tasks.py logwatch-nginx-1 gpt-4o")
-        print("Available datasets: logwatch-nginx-1, dev-arena-mern-sandbox")
         sys.exit(1)
 
     dataset = sys.argv[1]
-    model = sys.argv[2] if len(sys.argv) > 2 else "gpt-4o"
+    model = sys.argv[2] if len(sys.argv) > 2 else "oracle"
 
     print(f"Running all tasks in dataset '{dataset}' with model: {model}")
 
-    # Get dataset path (check relative locations only)
     dataset_paths = [
-        Path(dataset),  # Local directory
-        Path(f"datasets/{dataset}"),  # In datasets folder
+        Path(dataset),
+        Path(f"datasets/{dataset}"),
     ]
 
     dataset_path = None
@@ -81,7 +71,6 @@ def main():
 
     print(f"Using dataset path: {dataset_path}")
 
-    # Get all task names
     tasks = get_task_names(dataset_path)
 
     if not tasks:
@@ -91,7 +80,6 @@ def main():
     print(f"Found {len(tasks)} tasks: {', '.join(tasks)}")
     print("-" * 60)
 
-    # Run each task
     results = {}
     for i, task in enumerate(tasks, 1):
         print(f"\n[{i}/{len(tasks)}] Processing task: {task}")
@@ -99,7 +87,6 @@ def main():
         results[task] = success
         print("-" * 60)
 
-    # Summary
     print(f"\nSUMMARY for dataset '{dataset}' with model '{model}':")
     successful = sum(results.values())
     total = len(results)
