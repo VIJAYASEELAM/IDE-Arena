@@ -364,23 +364,15 @@ def bench(
 
                         vctx.log("Running Docker container...")
                         env_vars = {}
-                        print(f"DEBUG: Checking for API keys in environment...")
 
                         if os.environ.get("ANTHROPIC_API_KEY"):
                             env_vars["ANTHROPIC_API_KEY"] = os.environ.get("ANTHROPIC_API_KEY")
-                            print(f"DEBUG: Found ANTHROPIC_API_KEY: {os.environ.get('ANTHROPIC_API_KEY')[:10]}...")
 
                         if os.environ.get("OPENAI_API_KEY"):
                             env_vars["OPENAI_API_KEY"] = os.environ.get("OPENAI_API_KEY")
-                            print(f"DEBUG: Found OPENAI_API_KEY: {os.environ.get('OPENAI_API_KEY')[:10]}...")
-                        else:
-                            print(f"DEBUG: OPENAI_API_KEY not found in environment!")
 
                         if os.environ.get("GOOGLE_API_KEY"):
                             env_vars["GOOGLE_API_KEY"] = os.environ.get("GOOGLE_API_KEY")
-                            print(f"DEBUG: Found GOOGLE_API_KEY: {os.environ.get('GOOGLE_API_KEY')[:10]}...")
-
-                        print(f"DEBUG: Passing {len(env_vars)} environment variables to container")
 
                         container = client.containers.run(
                             image.id,
@@ -393,12 +385,10 @@ def bench(
                         try:
                             container.reload()
                             if container.status != "running":
-                                print(f"DEBUG: Container not running (status: {container.status}), attempting start...")
                                 container.start()
                                 container.reload()
-                                print(f"DEBUG: Container status after start: {container.status}")
                         except Exception as e:
-                            print(f"DEBUG: Error ensuring container running: {e}")
+                            pass
 
                         print("CONTAINER: Setting up git for change tracking...")
 
@@ -639,7 +629,7 @@ temp/"""
                                 command=[
                                     "sh",
                                     "-c",
-                                    "find tasks -type f -name 'task_diff.txt' -delete && echo 'DEBUG: Removed task_diff.txt from container for harness runs'"
+                                    "find tasks -type f -name 'task_diff.txt' -delete"
                                 ],
                                 stream=False,
                             )
@@ -661,10 +651,6 @@ temp/"""
                             raise typer.Exit(1)
 
                         vctx.log("Deploying agent...")
-                        print(f"DEBUG: About to deploy agent {agent} with model {model_name}")
-                        print(f"DEBUG: Task data keys: {list(task_data.keys())}")
-                        print(f"DEBUG: Task: {task_data.get('task', 'N/A')}")
-                        print(f"DEBUG: Instructions length: {len(task_data.get('instructions', ''))}")
 
                         agent_result = deploy_agent_in_container(
                             container=container,
@@ -674,12 +660,6 @@ temp/"""
                             task_data=task_data,
                             verbose=verbose,
                         )
-                        print(f"DEBUG: Agent result success: {agent_result.get('success')}")
-                        print(f"DEBUG: Agent result keys: {list(agent_result.keys())}")
-                        if 'error' in agent_result:
-                            print(f"DEBUG: Agent error: {agent_result['error']}")
-                        if 'conversation_history' in agent_result:
-                            print(f"DEBUG: Conversation history length: {len(agent_result['conversation_history'])}")
 
                         vctx.log(f"Agent deployment result: {agent_result}", "debug")
 
