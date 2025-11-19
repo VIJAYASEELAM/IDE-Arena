@@ -81,3 +81,5 @@ local_settings.py
 
 .next/
 out/
+
+/datasets

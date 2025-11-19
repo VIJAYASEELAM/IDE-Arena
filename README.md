@@ -11,6 +11,8 @@ IDE Arena is a comprehensive framework for evaluating AI IDE agents on real-worl
 
 ### Running Benchmarks
 
+**Note**: Place datasets in the `datasets/` folder (excluded from git) or use absolute paths.
+
 **Oracle Agent (Golden Solution)**
 
 ```bash
@@ -47,8 +49,15 @@ uv run utilities/run_all_datasets.py <datasets_directory> [model]
 **Run all tasks in a dataset:**
 
 ```bash
-uv run utilities/run_all_tasks.py <dataset> [model]
+uv run utilities/run_all_tasks.py <dataset> [model] [--start-from task_name]
 ```
+
+- `<dataset>`: Path to dataset directory (searches both absolute path and `datasets/<dataset>`)
+- `[model]`: Model name (defaults to "gpt-5"). Special values:
+  - `oracle`: Uses oracle agent with oracle model
+  - `nullagent`: Uses harness agent with nullagent model
+  - Any other value: Uses harness agent with specified model
+- `[--start-from task_name]`: Resume from a specific task (for interrupted/partial runs)
 
 ## Web Interface
 
@@ -87,13 +96,13 @@ dataset/
     ├── task-name-1/
     │   ├── task_description.txt        # Task description and instructions
     │   ├── task_diff.txt               # Golden solution diff (for oracle mode)
-    │   ├── task_tests.*                # Task-specific test file (language-specific extension)
+    │   ├── task_tests.*                # Task/language-specific test file
     │   ├── run-tests.sh                # Task-specific test runner script
     │   └── docker-compose.yaml         # Task-specific container configuration
     ├── task-name-2/
     │   ├── task_description.txt
     │   ├── task_diff.txt
-    │   ├── task_tests.*                # Task-specific test file (language-specific extension)
+    │   ├── task_tests.*
     │   ├── run-tests.sh
     │   └── docker-compose.yaml
     └── ...

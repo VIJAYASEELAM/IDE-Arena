@@ -18,16 +18,16 @@ def get_task_names(dataset_path: Path) -> list:
     return sorted(tasks)
 
 
-def run_task(task_name: str, dataset: str, model: str = "gpt-5") -> bool:
+def run_task(task_name: str, dataset: str, agent: str, model: str) -> bool:
     cmd = [
         "uv", "run", "main.py", "bench",
         "--dataset", dataset,
-        "--agent", "harness",
+        "--agent", agent,
         "--model", model,
         "--task-id", task_name
     ]
 
-    print(f"Running task: {task_name} with model: {model}")
+    print(f"Running task: {task_name} with agent: {agent}, model: {model}")
     print(f"Command: {' '.join(cmd)}")
 
     try:
@@ -43,13 +43,35 @@ def run_task(task_name: str, dataset: str, model: str = "gpt-5") -> bool:
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python run_all_tasks.py <dataset> [model]")
+        print("Usage: python run_all_tasks.py <dataset> [model] [--start-from task_name]")
         sys.exit(1)
 
     dataset = sys.argv[1]
-    model = sys.argv[2] if len(sys.argv) > 2 else "gpt-5"
+    model = "gpt-5"
+    start_from = None
 
-    print(f"Running all tasks in dataset '{dataset}' with model: {model}")
+    i = 2
+    while i < len(sys.argv):
+        if sys.argv[i] == "--start-from" and i + 1 < len(sys.argv):
+            start_from = sys.argv[i + 1]
+            i += 2
+        else:
+            model = sys.argv[i]
+            i += 1
+
+    # Determine agent based on model
+    if model == "oracle":
+        agent = "oracle"
+        model = "oracle"
+    elif model == "nullagent":
+        agent = "harness"
+        model = "nullagent"
+    else:
+        agent = "harness"
+
+    print(f"Running tasks in dataset '{dataset}' with agent: {agent}, model: {model}")
+    if start_from:
+        print(f"Starting from task: {start_from}")
 
     dataset_paths = [
         Path(dataset),
@@ -76,17 +98,27 @@ def main():
         print("No tasks found!")
         sys.exit(1)
 
-    print(f"Found {len(tasks)} tasks: {', '.join(tasks)}")
+    if start_from:
+        if start_from not in tasks:
+            print(f"Task '{start_from}' not found in dataset!")
+            print(f"Available tasks: {', '.join(tasks)}")
+            sys.exit(1)
+
+        start_index = tasks.index(start_from)
+        tasks = tasks[start_index:]
+        print(f"Starting from task '{start_from}' - running {len(tasks)} tasks")
+
+    print(f"Found {len(tasks)} tasks to run: {', '.join(tasks)}")
     print("-" * 60)
 
     results = {}
     for i, task in enumerate(tasks, 1):
         print(f"\n[{i}/{len(tasks)}] Processing task: {task}")
-        success = run_task(task, dataset, model)
+        success = run_task(task, dataset, agent, model)
         results[task] = success
         print("-" * 60)
 
-    print(f"\nSUMMARY for dataset '{dataset}' with model '{model}':")
+    print(f"\nSUMMARY for dataset '{dataset}' with agent '{agent}', model '{model}':")
     successful = sum(results.values())
     total = len(results)
 
@@ -96,7 +128,7 @@ def main():
 
     print("\nDetailed results:")
     for task, success in results.items():
-        status = "" if success else ""
+        status = "yes:" if success else "no:"
         print(f"  {status} {task}")
 
 
