@@ -148,7 +148,18 @@ def run_grading_in_container(container, task_id: str, test_type: str, dataset_di
     # Add debug info about what's in the container
     debug_result = run_command_in_container(
         container=container,
-        command=["find", "/app", "-name", "*.py", "-type", "f"],
+        command=[
+            "find", "/app", "-type", "f", "-name", "*.py",
+            "-not", "-path", "*/node_modules/*",
+            "-not", "-path", "*/__pycache__/*",
+            "-not", "-path", "*/.venv/*",
+            "-not", "-path", "*/venv/*",
+            "-not", "-path", "*/dist/*",
+            "-not", "-path", "*/build/*",
+            "-not", "-path", "*/target/*",
+            "-not", "-path", "*/vendor/*",
+            "-not", "-path", "*/.git/*",
+        ],
         stream=False,
     )
     print(f"GRADER: Python files in container:")
@@ -335,7 +346,19 @@ def run_grading_in_container(container, task_id: str, test_type: str, dataset_di
                         print(f"GRADER: Searching for {pattern} files in {search_dir}...")
                         find_result = run_command_in_container(
                             container=container,
-                            command=["find", search_dir, "-type", "f", "-name", pattern],
+                            command=[
+                                "find", search_dir, "-type", "f",
+                                "-not", "-path", "*/node_modules/*",
+                                "-not", "-path", "*/__pycache__/*",
+                                "-not", "-path", "*/.venv/*",
+                                "-not", "-path", "*/venv/*",
+                                "-not", "-path", "*/dist/*",
+                                "-not", "-path", "*/build/*",
+                                "-not", "-path", "*/target/*",
+                                "-not", "-path", "*/vendor/*",
+                                "-not", "-path", "*/.git/*",
+                                "-name", pattern
+                            ],
                             stream=False,
                         )
                         if find_result.get('exit_code') == 0:
