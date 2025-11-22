@@ -36,7 +36,19 @@ def extract_final_agent_code(container) -> dict:
     for pattern, description in search_patterns:
         find_result = run_command_in_container(
             container=container,
-            command=["find", "/app", "-type", "f", "-name", pattern],
+            command=[
+                "find", "/app", "-type", "f",
+                "-not", "-path", "*/node_modules/*",
+                "-not", "-path", "*/__pycache__/*",
+                "-not", "-path", "*/.venv/*",
+                "-not", "-path", "*/venv/*",
+                "-not", "-path", "*/dist/*",
+                "-not", "-path", "*/build/*",
+                "-not", "-path", "*/target/*",
+                "-not", "-path", "*/vendor/*",
+                "-not", "-path", "*/.git/*",
+                "-name", pattern
+            ],
             stream=False,
         )
 
