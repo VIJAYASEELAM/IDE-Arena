@@ -697,6 +697,14 @@ class EnhancedTools:
     ) -> dict:
         """Read contents of a file with line range support"""
         try:
+            target_path = Path(target_file)
+            if "tasks" in target_path.parts or target_path.name == "run_tests.sh":
+                return {
+                    "success": False,
+                    "error": "Access denied: Reading files in 'tasks/' directory or 'run_tests.sh' is restricted.",
+                    "target_file": target_file,
+                }
+
             if self.container:
                 result = run_command_in_container(
                     container=self.container,
