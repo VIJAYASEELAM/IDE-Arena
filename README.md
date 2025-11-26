@@ -39,10 +39,10 @@ Run multiple independent attempts per task to measure success probability (defau
 
 ```bash
 # Pass@1 (default - single attempt)
-uv run main.py bench --dataset datasets/Nike --agent gladiator --model gpt-4o --task-id task-01
+uv run main.py bench --dataset /path/to/dataset --agent gladiator --model gpt-4o --task-id task-01
 
 # Pass@5 (5 independent attempts)
-uv run main.py bench --dataset datasets/Nike --agent gladiator --model gpt-4o --task-id task-01 --pass-at 5
+uv run main.py bench --dataset /path/to/dataset --agent gladiator --model gpt-4o --task-id task-01 --pass-at 5
 ```
 
 **How Pass@k Works:**
