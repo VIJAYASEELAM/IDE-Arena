@@ -2392,7 +2392,12 @@ Always explain your reasoning and approach clearly.
                     print(f"HARNESS: Truncating conversation to fit context window")
                     # Keep system message and last 20 messages only
                     system_msg = messages[0]
-                    recent_messages = messages[-20:]
+                    start_idx = len(messages) - 20
+
+                    while start_idx > 1 and messages[start_idx].get("role") == "tool":
+                        start_idx -= 1
+
+                    recent_messages = messages[start_idx:]
                     messages = [system_msg] + recent_messages
                     print(f"HARNESS: Truncated to {len(messages)} messages")
 
