@@ -1083,6 +1083,26 @@ class EnhancedTools:
                     "error": "line_edits is required for line_edits edit type",
                 }
 
+            if isinstance(line_edits, str):
+                return {
+                    "success": False,
+                    "error": f"line_edits must be an array of edit objects, got string. Parse your JSON properly.",
+                    "hint": "line_edits should be [{\"type\": \"replace\", \"line_number\": 1, \"content\": \"...\"}, ...]",
+                }
+
+            if not isinstance(line_edits, list):
+                return {
+                    "success": False,
+                    "error": f"line_edits must be an array, got {type(line_edits).__name__}",
+                }
+
+            for i, edit in enumerate(line_edits):
+                if not isinstance(edit, dict):
+                    return {
+                        "success": False,
+                        "error": f"line_edits[{i}] must be an object, got {type(edit).__name__}",
+                    }
+
             # Read current file content
             if self.container:
                 # Container-based file reading
@@ -2323,60 +2343,39 @@ class LiteLLMAgentHarness:
         else:
             return {"error": f"Unknown function: {function_name}"}
 
+    def _load_system_prompt(self) -> str:
+        """Load system prompt from IDE-Arena-Prompt.txt"""
+        try:
+            prompt_file = Path(__file__).parent / "IDE-Arena-Prompt.txt"
+            if prompt_file.exists():
+                with open(prompt_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                lines = content.split('\n')
+                prompt_lines = []
+                skip_header = True
+                for line in lines:
+                    if skip_header and line.strip().startswith('#'):
+                        continue
+                    if skip_header and not line.strip():
+                        continue
+                    skip_header = False
+                    prompt_lines.append(line)
+
+                prompt = '\n'.join(prompt_lines).strip()
+                if prompt:
+                    return prompt
+        except Exception as e:
+            print(f"HARNESS: Failed to load prompt file: {e}")
+
+        print("IDE-Arena-Prompt.txt not found")
+
     def execute_task(self, task_prompt: str, max_iterations: int = 10) -> dict:
         """Execute a task using the agent with file editing capabilities"""
+        system_prompt = self._load_system_prompt()
         messages = [
             {
                 "role": "system",
-                "content": """
-You are a powerful coding assistant with comprehensive development capabilities. You have access to the following tools:
-
-SEARCH & DISCOVERY:
-- codebase_search: Semantic search through codebase to find relevant code snippets
-- grep_search: Fast regex-based text search with file filtering
-- file_search: Fuzzy search for files by name
-- list_dir: List directory contents for exploration
-
-FILE OPERATIONS:
-- read_file: Read file contents with optional line range support
-- edit_file: Propose structured edits to files
-- search_replace: Find and replace text in files
-- write_file: Create new files or overwrite existing ones
-- delete_file: Remove files from the filesystem
-
-EXECUTION & AUTOMATION:
-- run_terminal_cmd: Execute shell commands (with background support)
-- create_directory: Create directory structures
-
-SPECIALIZED TOOLS:
-- edit_notebook: Edit Jupyter notebook cells
-- create_diagram: Generate Mermaid diagrams
-- web_search: Search the web for information (when available)
-
-MERN STACK TOOLS:
-- api_call: Make HTTP requests to test REST API endpoints
-- database_query: Execute MongoDB queries (find, insert, update, delete, aggregate)
-- websocket_test: Test Socket.IO real-time functionality
-- ui_test: Browser automation for React frontend testing (screenshot, click, type, navigate)
-
-WORKFLOW GUIDELINES:
-1. Break down complex tasks into steps
-2. Use search tools to understand the codebase first
-3. Read relevant files before making changes
-4. Use appropriate tools for the task (semantic search vs grep vs file search)
-5. Provide clear explanations with each tool use
-6. Test changes when possible using terminal commands
-
-FOR MERN STACK APPLICATIONS:
-1. Identify if you're working with a MERN (MongoDB, Express, React, Node.js) stack
-2. Use api_call to test backend endpoints after making changes
-3. Use database_query to verify data persistence in MongoDB
-4. Use websocket_test for real-time features (chat, notifications, live updates)
-5. Use ui_test to verify frontend functionality and user interactions
-6. Look for server/ directory (backend), client/ directory (frontend), and package.json files
-
-Always explain your reasoning and approach clearly.
-""",
+                "content": system_prompt,
             },
             {"role": "user", "content": task_prompt},
         ]
