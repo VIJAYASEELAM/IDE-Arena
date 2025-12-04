@@ -1,0 +1,6 @@
+task_description: |
+  Task: Fix GPA Logic
+  difficulty: easy
+  category: Bug
+  tags: [javascript]
+  parser_name: jest
