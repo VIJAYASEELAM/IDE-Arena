@@ -1,15 +1,2 @@
 task_description: |
-  Task: Fix Logic Error in GPA Calculation
-  Instructions:
-  The current GPA calculation logic in 'studentController.js' is incorrect. It divides the total grade points by the number of courses taken. 
-  
-  The correct formula for GPA is: Total Grade Points / Total Credits Completed.
-  
-  1. Identify the 'calculateGPA' function in 'repo/controllers/studentController.js'.
-  2. Change the divisor from 'student.coursesTaken' to 'student.creditsCompleted'.
-  3. Ensure that if 'creditsCompleted' is 0, the GPA remains 0 to avoid division by zero errors.
-  
-  difficulty: easy
-  category: Bug
-  tags: [javascript, backend, logic]
-  parser_name: jest
+  Task: Fix GPA Logic
