@@ -54,7 +54,6 @@ def extract_final_agent_code(container) -> dict:
 
         if find_result.get('exit_code') == 0:
             found_files = [f.strip() for f in find_result.get('output', '').split('\n') if f.strip()]
-            print(f"GRADER: Found {len(found_files)} {description}")
 
             for file_path in found_files:
                 # Read the file content
@@ -68,9 +67,7 @@ def extract_final_agent_code(container) -> dict:
                     # Store with relative path as key
                     relative_path = file_path.replace('/app/', '') if file_path.startswith('/app/') else file_path
                     final_code_state[relative_path] = cat_result.get('output', '')
-                    print(f"GRADER: Captured {relative_path} ({len(cat_result.get('output', ''))} chars)")
 
-    print(f"GRADER: Final code state captured: {len(final_code_state)} files")
     return final_code_state
 
 

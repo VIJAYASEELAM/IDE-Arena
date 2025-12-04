@@ -24,6 +24,90 @@ def _patched_create_default_context(purpose=ssl.Purpose.SERVER_AUTH, *, cafile=N
 
 ssl.create_default_context = _patched_create_default_context
 
+def is_test_related_operation(path: str = None, command: str = None, operation_type: str = None) -> tuple[bool, str]:
+
+    if path:
+        path_str = str(path).replace('\\', '/')
+        path_lower = path_str.lower()
+        path_obj = Path(path_str)
+
+        # Block run_tests.sh
+        if path_obj.name in ['run_tests.sh', 'run-tests.sh']:
+            return True, f"Access denied: {path_obj.name} is restricted for evaluation purposes"
+
+        # Block task_tests.*
+        if path_obj.name.startswith('task_tests.'):
+            return True, f"Access denied: {path_obj.name} is restricted for evaluation purposes"
+
+
+        if 'run_tests.sh' in path_lower or 'run-tests.sh' in path_lower:
+            return True, "Access denied: run_tests.sh files are restricted"
+
+        if 'task_tests.' in path_lower:
+            return True, "Access denied: task_tests.* files are restricted"
+
+    # Check command-based operations
+    if command:
+        command_lower = command.lower()
+
+        # Block execution of run_tests.sh
+        if 'run_tests.sh' in command_lower or 'run-tests.sh' in command_lower:
+            return True, "Access denied: Execution of run_tests.sh is restricted"
+
+        # Block operations on task_tests.* files
+        if 'task_tests.' in command_lower:
+            return True, "Access denied: Operations on task_tests.* files are restricted"
+
+
+        if any(pattern in command_lower for pattern in ['./run_tests', 'sh run_tests', 'bash run_tests',
+                                                         './run-tests', 'sh run-tests', 'bash run-tests',
+                                                         'python task_tests', 'node task_tests']):
+            return True, "Access denied: Test execution is restricted"
+
+    return False, ""
+
+
+def security_wrapper(operation_name: str):
+    """
+    Decorator to add security checks to agent tool methods
+    """
+    def decorator(func):
+        def wrapper(self, *args, **kwargs):
+            path = None
+            command = None
+
+            for param_name in ['target_file', 'file_path', 'relative_workspace_path']:
+                if param_name in kwargs:
+                    path = kwargs[param_name]
+                    break
+
+            if not path and args and operation_name in ['read_file', 'edit_file', 'write_file', 'delete_file']:
+                path = args[0]
+
+            if 'command' in kwargs:
+                command = kwargs['command']
+            elif args and operation_name == 'run_terminal_cmd':
+                command = args[0]
+
+            is_blocked, reason = is_test_related_operation(
+                path=path,
+                command=command,
+                operation_type=operation_name
+            )
+
+            if is_blocked:
+                return {
+                    "success": False,
+                    "error": reason,
+                    "operation": operation_name,
+                    "blocked_by_security": True
+                }
+
+            return func(self, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
 def sanitize_traceback(tb_string: str) -> str:
     pattern = r'File "([^"]+)",'
 
@@ -697,6 +781,7 @@ class EnhancedTools:
         except Exception as e:
             return {"success": False, "error": f"Codebase search failed: {str(e)}"}
 
+    @security_wrapper("read_file")
     def read_file(
         self,
         target_file: str,
@@ -774,6 +859,7 @@ class EnhancedTools:
                 "error": f"Error reading file '{target_file}': {str(e)}",
             }
 
+    @security_wrapper("run_terminal_cmd")
     def run_terminal_cmd(
         self, command: str, explanation: str = "", is_background: bool = False
     ) -> dict:
@@ -844,6 +930,7 @@ class EnhancedTools:
                 "command": command,
             }
 
+    @security_wrapper("list_dir")
     def list_dir(self, relative_workspace_path: str, explanation: str = "") -> dict:
         """List directory contents"""
         try:
@@ -903,6 +990,7 @@ class EnhancedTools:
                 "error": f"Error listing directory '{relative_workspace_path}': {str(e)}",
             }
 
+    @security_wrapper("grep_search")
     def grep_search(
         self,
         query: str,
@@ -1011,6 +1099,7 @@ class EnhancedTools:
                 "query": query,
             }
 
+    @security_wrapper("edit_file")
     def edit_file(
         self,
         target_file: str,
@@ -1093,6 +1182,26 @@ class EnhancedTools:
                     "error": "line_edits is required for line_edits edit type",
                 }
 
+            if isinstance(line_edits, str):
+                return {
+                    "success": False,
+                    "error": f"line_edits must be an array of edit objects, got string. Parse your JSON properly.",
+                    "hint": "line_edits should be [{\"type\": \"replace\", \"line_number\": 1, \"content\": \"...\"}, ...]",
+                }
+
+            if not isinstance(line_edits, list):
+                return {
+                    "success": False,
+                    "error": f"line_edits must be an array, got {type(line_edits).__name__}",
+                }
+
+            for i, edit in enumerate(line_edits):
+                if not isinstance(edit, dict):
+                    return {
+                        "success": False,
+                        "error": f"line_edits[{i}] must be an object, got {type(edit).__name__}",
+                    }
+
             # Read current file content
             if self.container:
                 # Container-based file reading
@@ -1153,20 +1262,52 @@ class EnhancedTools:
                 content = edit.get("content", "")
                 line_idx = max(0, line_number - 1)
 
-                if line_idx < len(lines):
-                    old_content = lines[line_idx].rstrip("\n")
-                    lines[line_idx] = content + "\n"
-                    changes_made.append(
-                        f"Line {line_number}: Replaced '{old_content[:50]}...' with '{content[:50]}...'"
-                    )
+                if '\n' in content:
+                    replacement_lines = content.split('\n')
+                    replacement_lines = [line + '\n' for line in replacement_lines[:-1]] + [replacement_lines[-1] + '\n' if replacement_lines[-1] else '']
+
+                    if line_number == 1 and len(replacement_lines) > 10 and replacement_lines[0].startswith('#!/usr/bin/env'):
+                        lines.clear()
+                        lines.extend(replacement_lines)
+                        changes_made.append(
+                            f"Line {line_number}: Complete file replacement with {len(replacement_lines)} lines"
+                        )
+                    elif line_idx < len(lines):
+                        old_content = lines[line_idx].rstrip("\n")
+
+                        lines[line_idx] = replacement_lines[0]
+
+                        for i, new_line in enumerate(replacement_lines[1:], 1):
+                            lines.insert(line_idx + i, new_line)
+                        changes_made.append(
+                            f"Line {line_number}: Replaced '{old_content[:50]}...' with {len(replacement_lines)} lines starting with '{replacement_lines[0][:50]}...'"
+                        )
+                    else:
+                        while len(lines) < line_number:
+                            lines.append("\n")
+
+                        for i, new_line in enumerate(replacement_lines):
+                            if line_number - 1 + i < len(lines):
+                                lines[line_number - 1 + i] = new_line
+                            else:
+                                lines.append(new_line)
+                        changes_made.append(
+                            f"Line {line_number}: Added {len(replacement_lines)} lines starting with '{replacement_lines[0][:50]}...' (extended file)"
+                        )
                 else:
-                    # Line doesn't exist, extend the file to that line
-                    while len(lines) < line_number:
-                        lines.append("\n")
-                    lines[line_number - 1] = content + "\n"
-                    changes_made.append(
-                        f"Line {line_number}: Added '{content[:50]}...' (extended file)"
-                    )
+                    if line_idx < len(lines):
+                        old_content = lines[line_idx].rstrip("\n")
+                        lines[line_idx] = content + "\n"
+                        changes_made.append(
+                            f"Line {line_number}: Replaced '{old_content[:50]}...' with '{content[:50]}...'"
+                        )
+                    else:
+                        while len(lines) < line_number:
+                            lines.append("\n")
+                        lines[line_number - 1] = content + "\n"
+                        changes_made.append(
+                            f"Line {line_number}: Added '{content[:50]}...' (extended file)"
+                        )
 
             # Apply inserts (in reverse line order to avoid shifting issues)
             for edit in sorted(
@@ -1212,6 +1353,16 @@ class EnhancedTools:
                     error_msg = f"Python syntax error in {file_path}: {e.msg} at line {e.lineno}"
                     print(f"HARNESS: {error_msg}")
                     print(f"HARNESS: Changes that would have been applied: {changes_made}")
+
+                    content_lines = content.splitlines()
+                    if e.lineno and 1 <= e.lineno <= len(content_lines):
+                        start_line = max(1, e.lineno - 2)
+                        end_line = min(len(content_lines), e.lineno + 2)
+                        print(f"HARNESS: Content around error (lines {start_line}-{end_line}):")
+                        for i in range(start_line - 1, end_line):
+                            prefix = ">>> " if i + 1 == e.lineno else "    "
+                            print(f"HARNESS: {prefix}{i+1:3}: {content_lines[i]}")
+
                     return {
                         "success": False,
                         "error": error_msg,
@@ -1226,43 +1377,46 @@ class EnhancedTools:
 
             # Write the modified content back to file
             if self.container:
-                # Enhanced container-based file writing with better error handling
+                import io
+                import tarfile
+
                 print(f"HARNESS: Writing {len(content)} characters to {file_path}")
 
-                # Method 1: Try python-based writing first (most reliable)
-                import base64
-                encoded_content = base64.b64encode(content.encode('utf-8')).decode('ascii')
-                python_write_cmd = [
-                    "python3", "-c",
-                    f"import base64; "
-                    f"content = base64.b64decode('{encoded_content}').decode('utf-8'); "
-                    f"open('{file_path}', 'w', encoding='utf-8').write(content)"
-                ]
-                write_result = run_command_in_container(self.container, python_write_cmd)
+                try:
+                    # Ensure parent directory exists
+                    parent_dir = str(Path(file_path).parent)
+                    run_command_in_container(
+                        container=self.container,
+                        command=["mkdir", "-p", parent_dir],
+                    )
 
-                if not write_result["success"]:
-                    print(f"HARNESS: Python write failed, trying cat method...")
-                    # Fallback: Use cat with proper content handling
-                    # Create a temporary file with safe content then copy it
-                    import tempfile
-                    import shlex
+                    # Create a tar archive in memory with the file content
+                    tar_stream = io.BytesIO()
+                    file_data = content.encode('utf-8')
+                    file_name = Path(file_path).name
 
-                    # Write to a temporary file path that's safe
-                    temp_path = f"/tmp/edit_content_{hash(content) % 10000}.tmp"
-                    escaped_content = content.replace("'", "'\"'\"'")  # Escape single quotes properly
-                    cat_cmd = ["sh", "-c", f"cat > {temp_path} << 'EDIT_EOF'\n{escaped_content}\nEDIT_EOF\n && mv {temp_path} {file_path}"]
+                    with tarfile.open(fileobj=tar_stream, mode='w') as tar:
+                        tarinfo = tarfile.TarInfo(name=file_name)
+                        tarinfo.size = len(file_data)
+                        tar.addfile(tarinfo, io.BytesIO(file_data))
 
-                    write_result = run_command_in_container(self.container, cat_cmd)
+                    tar_stream.seek(0)
 
-                if not write_result["success"]:
-                    print(f"HARNESS: Both write methods failed!")
-                    print(f"HARNESS: Write error: {write_result.get('error', 'Unknown error')}")
+                    # Use Docker API to put the file directly (no shell interpretation)
+                    self.container.put_archive(parent_dir, tar_stream.getvalue())
+
+                    print(f"HARNESS: File write succeeded via put_archive")
+
+                except Exception as e:
+                    print(f"HARNESS: put_archive write failed: {e}")
                     return {
                         "success": False,
-                        "error": f"Failed to write file to container: {write_result.get('error', 'Unknown error')}",
+                        "error": f"Failed to write file to container: {str(e)}",
                         "target_file": str(
                             Path(file_path).relative_to(Path(self.base_path))
-                        ),
+                        ) if hasattr(self, 'base_path') else str(file_path),
+                        "content_size": len(content),
+                        "attempted_changes": changes_made,
                     }
 
                 print(f"HARNESS: File write succeeded, verifying content...")
@@ -1379,6 +1533,7 @@ class EnhancedTools:
                 "target_file": target_file,
             }
 
+    @security_wrapper("search_replace")
     def search_replace(self, file_path: str, old_string: str, new_string: str) -> dict:
         """Search and replace text in a file"""
         try:
@@ -1409,21 +1564,32 @@ class EnhancedTools:
                         old_string, new_string, 1
                     )  # Replace only first occurrence
 
-                    # Write back to file
-                    escaped_content = new_content.replace('"', '\\"').replace(
-                        "$", "\\$"
-                    )
-                    write_result = run_command_in_container(
-                        self.container,
-                        [
-                            "sh",
-                            "-c",
-                            f'echo "{escaped_content}" > {self.base_path / file_path}',
-                        ],
+                    # Write back using put_archive (no shell interpretation)
+                    import io
+                    import tarfile
+
+                    full_path = self.base_path / file_path
+                    parent_dir = str(full_path.parent)
+
+                    # Ensure parent directory exists
+                    run_command_in_container(
+                        self.container, ["mkdir", "-p", parent_dir]
                     )
 
+                    # Create tar archive with new content
+                    tar_stream = io.BytesIO()
+                    file_data = new_content.encode('utf-8')
+
+                    with tarfile.open(fileobj=tar_stream, mode='w') as tar:
+                        tarinfo = tarfile.TarInfo(name=full_path.name)
+                        tarinfo.size = len(file_data)
+                        tar.addfile(tarinfo, io.BytesIO(file_data))
+
+                    tar_stream.seek(0)
+                    self.container.put_archive(parent_dir, tar_stream.getvalue())
+
                     return {
-                        "success": write_result["success"],
+                        "success": True,
                         "message": f"Successfully replaced text in {file_path}",
                         "file_path": file_path,
                         "old_string": old_string,
@@ -1512,6 +1678,7 @@ class EnhancedTools:
                 "query": query,
             }
 
+    @security_wrapper("delete_file")
     def delete_file(self, target_file: str, explanation: str = "") -> dict:
         """Delete a file"""
         try:
@@ -1721,6 +1888,7 @@ class EnhancedTools:
                 "target_notebook": target_notebook
             }
 
+    @security_wrapper("write_file")
     def write_file(self, file_path: str, content: str) -> dict:
         """Write content to a file - kept for backward compatibility"""
         try:
@@ -1733,23 +1901,37 @@ class EnhancedTools:
                 }
 
             if self.container:
-                # Use echo to write content to file in container
-                escaped_content = content.replace('"', '\\"').replace("$", "\\$")
-                result = run_command_in_container(
+                import io
+                import tarfile
+
+                # Resolve the full path
+                full_path = self.base_path / file_path
+
+                # Ensure parent directory exists
+                parent_dir = str(full_path.parent)
+                run_command_in_container(
                     container=self.container,
-                    command=[
-                        "sh",
-                        "-c",
-                        f'echo "{escaped_content}" > {self.base_path / file_path}',
-                    ],
+                    command=["mkdir", "-p", parent_dir],
                 )
+
+                # Create a tar archive in memory with the file content
+                tar_stream = io.BytesIO()
+                file_data = content.encode('utf-8')
+
+                with tarfile.open(fileobj=tar_stream, mode='w') as tar:
+                    tarinfo = tarfile.TarInfo(name=full_path.name)
+                    tarinfo.size = len(file_data)
+                    tar.addfile(tarinfo, io.BytesIO(file_data))
+
+                tar_stream.seek(0)
+
+                # Use Docker API to put the file directly (no shell interpretation)
+                self.container.put_archive(parent_dir, tar_stream.getvalue())
+
                 return {
-                    "success": result["success"],
-                    "message": f"Successfully wrote to {file_path}"
-                    if result["success"]
-                    else "Failed to write file",
+                    "success": True,
+                    "message": f"Successfully wrote to {file_path}",
                     "file_path": file_path,
-                    "error": result.get("error") if not result["success"] else None,
                 }
             else:
                 # Local file system
@@ -2275,60 +2457,39 @@ class LiteLLMAgentHarness:
         else:
             return {"error": f"Unknown function: {function_name}"}
 
+    def _load_system_prompt(self) -> str:
+        """Load system prompt from IDE-Arena-Prompt.txt"""
+        try:
+            prompt_file = Path(__file__).parent / "IDE-Arena-Prompt.txt"
+            if prompt_file.exists():
+                with open(prompt_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                lines = content.split('\n')
+                prompt_lines = []
+                skip_header = True
+                for line in lines:
+                    if skip_header and line.strip().startswith('#'):
+                        continue
+                    if skip_header and not line.strip():
+                        continue
+                    skip_header = False
+                    prompt_lines.append(line)
+
+                prompt = '\n'.join(prompt_lines).strip()
+                if prompt:
+                    return prompt
+        except Exception as e:
+            print(f"HARNESS: Failed to load prompt file: {e}")
+
+        print("IDE-Arena-Prompt.txt not found")
+
     def execute_task(self, task_prompt: str, max_iterations: int = 10) -> dict:
         """Execute a task using the agent with file editing capabilities"""
+        system_prompt = self._load_system_prompt()
         messages = [
             {
                 "role": "system",
-                "content": """
-You are a powerful coding assistant with comprehensive development capabilities. You have access to the following tools:
-
-SEARCH & DISCOVERY:
-- codebase_search: Semantic search through codebase to find relevant code snippets
-- grep_search: Fast regex-based text search with file filtering
-- file_search: Fuzzy search for files by name
-- list_dir: List directory contents for exploration
-
-FILE OPERATIONS:
-- read_file: Read file contents with optional line range support
-- edit_file: Propose structured edits to files
-- search_replace: Find and replace text in files
-- write_file: Create new files or overwrite existing ones
-- delete_file: Remove files from the filesystem
-
-EXECUTION & AUTOMATION:
-- run_terminal_cmd: Execute shell commands (with background support)
-- create_directory: Create directory structures
-
-SPECIALIZED TOOLS:
-- edit_notebook: Edit Jupyter notebook cells
-- create_diagram: Generate Mermaid diagrams
-- web_search: Search the web for information (when available)
-
-MERN STACK TOOLS:
-- api_call: Make HTTP requests to test REST API endpoints
-- database_query: Execute MongoDB queries (find, insert, update, delete, aggregate)
-- websocket_test: Test Socket.IO real-time functionality
-- ui_test: Browser automation for React frontend testing (screenshot, click, type, navigate)
-
-WORKFLOW GUIDELINES:
-1. Break down complex tasks into steps
-2. Use search tools to understand the codebase first
-3. Read relevant files before making changes
-4. Use appropriate tools for the task (semantic search vs grep vs file search)
-5. Provide clear explanations with each tool use
-6. Test changes when possible using terminal commands
-
-FOR MERN STACK APPLICATIONS:
-1. Identify if you're working with a MERN (MongoDB, Express, React, Node.js) stack
-2. Use api_call to test backend endpoints after making changes
-3. Use database_query to verify data persistence in MongoDB
-4. Use websocket_test for real-time features (chat, notifications, live updates)
-5. Use ui_test to verify frontend functionality and user interactions
-6. Look for server/ directory (backend), client/ directory (frontend), and package.json files
-
-Always explain your reasoning and approach clearly.
-""",
+                "content": system_prompt,
             },
             {"role": "user", "content": task_prompt},
         ]
@@ -2353,14 +2514,106 @@ Always explain your reasoning and approach clearly.
                         print(f"HARNESS: Message {i}: [{role}] [Non-string content]")
                 print(f"HARNESS: Tools available: {len(self.tools)}")
 
-                # Context window management - simple message count limit
-                if len(messages) > 25:  # Keep conversations manageable
+                # Context window management: token-based truncation with hybrid fallback
+                if len(messages) > 25:
                     print(f"HARNESS: Truncating conversation to fit context window")
-                    # Keep system message and last 20 messages only
                     system_msg = messages[0]
-                    recent_messages = messages[-20:]
-                    messages = [system_msg] + recent_messages
-                    print(f"HARNESS: Truncated to {len(messages)} messages")
+
+                    try:
+                        model_max_tokens = litellm.get_max_tokens(self.model_name)
+                        if model_max_tokens and model_max_tokens > 0:
+                            target_tokens = int(model_max_tokens * 0.8)
+                            current_tokens = litellm.token_counter(model=self.model_name, messages=messages)
+
+                            if current_tokens and current_tokens > target_tokens:
+                                first_user_msg = None
+
+                                remaining_messages = []
+                                for msg in messages[1:]:
+                                    if first_user_msg is None and msg.get("role") == "user":
+                                        first_user_msg = msg
+                                    else:
+                                        remaining_messages.append(msg)
+
+                                turns = []
+                                current_turn = []
+
+                                for msg in remaining_messages:
+                                    role = msg.get("role")
+
+                                    if role == "assistant":
+                                        if current_turn and any(m.get("role") == "assistant" for m in current_turn):
+                                            turns.append(current_turn)
+                                        current_turn = [msg]
+                                    elif role == "tool":
+                                        current_turn.append(msg)
+                                    else:
+                                        if current_turn and any(m.get("role") == "assistant" for m in current_turn):
+                                            turns.append(current_turn)
+                                        current_turn = [msg]
+
+                                if current_turn and any(m.get("role") == "assistant" for m in current_turn):
+                                    turns.append(current_turn)
+
+                                base_messages = [system_msg]
+                                if first_user_msg:
+                                    base_messages.append(first_user_msg)
+
+                                selected_messages = []
+                                for turn in reversed(turns):
+                                    test_messages = base_messages + turn + selected_messages
+                                    turn_tokens = litellm.token_counter(model=self.model_name, messages=test_messages)
+                                    if turn_tokens and turn_tokens < target_tokens:
+                                        selected_messages = turn + selected_messages
+                                    else:
+                                        break
+
+                                if selected_messages or first_user_msg:
+                                    messages = base_messages + selected_messages
+                                    final_tokens = litellm.token_counter(model=self.model_name, messages=messages)
+                                    print(f"HARNESS: Token-truncated to {len(messages)} messages ({final_tokens}/{target_tokens} tokens)")
+                                else:
+                                    raise ValueError("Token truncation resulted in empty messages")
+                            else:
+                                print(f"HARNESS: Token count OK: {current_tokens}/{target_tokens} tokens")
+                        else:
+                            raise ValueError("Could not get model max tokens")
+
+                    except Exception as e:
+
+                        first_user_msg = None
+                        for msg in messages[1:]:
+                            if msg.get("role") == "user":
+                                first_user_msg = msg
+                                break
+
+                        turns_to_keep = 10
+                        max_messages_to_keep = 30
+
+                        start_idx = len(messages)
+                        turns_counted = 0
+
+                        while start_idx > 1 and turns_counted < turns_to_keep:
+                            start_idx -= 1
+                            if messages[start_idx].get("role") == "assistant":
+                                turns_counted += 1
+
+                        recent_messages = messages[start_idx:]
+
+                        if len(recent_messages) > max_messages_to_keep:
+                            start_idx = len(messages) - max_messages_to_keep
+
+                            while start_idx > 1 and messages[start_idx].get("role") == "tool":
+                                start_idx -= 1
+                            recent_messages = messages[start_idx:]
+
+                        # Build final message list with system + task prompt + recent turns
+                        base_messages = [system_msg]
+                        if first_user_msg and first_user_msg not in recent_messages:
+                            base_messages.append(first_user_msg)
+
+                        messages = base_messages + recent_messages
+                        print(f"HARNESS: Hybrid-truncated to {len(messages)} messages ({turns_counted} turns)")
 
                 # Make the LLM call
                 # Safety settings for Gemini to prevent blocking
